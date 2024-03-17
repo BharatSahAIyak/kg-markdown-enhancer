@@ -1,0 +1,16 @@
+version: '3.8'
+services:
+  neo4j:
+    build: .
+    container_name: neo4j-instance
+    environment:
+      - NEO4J_AUTH=neo4j/testingInstance
+    ports:
+      - "7474:7474" # HTTP
+      - "7687:7687" # Bolt
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+      - ./import:/var/lib/neo4j/import
+      - ./plugins:/plugins
+    restart: always
