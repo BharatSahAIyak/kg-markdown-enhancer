@@ -1,5 +1,6 @@
+import Page from "./editor/page";
 export default function Home() {
   return (
-    <div> Weclome to KG -Markdown Enhancer</div>
+    <div><Page/></div>
   );
 }
