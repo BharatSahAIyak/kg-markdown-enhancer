@@ -1,8 +1,9 @@
-"use client";
+'use client'
+import React, { useState } from "react";
 import Markdown from "react-markdown";
 import { marked } from "marked";
-import { useState } from "react";
-const page = () => {
+
+const Page = () => {
   const defaultMarkdown = `
 Marked - Markdown Parser
 ========================
@@ -41,9 +42,23 @@ Ready to start writing?  Either start changing stuff on the left or
 [Marked]: https://github.com/markedjs/marked/
 [Markdown]: http://daringfireball.net/projects/markdown/
 `;
+  
+  const database = ["Markdown", "Marked", "HTML"];
+  
   const [markdown, setMarkdown] = useState(defaultMarkdown);
-  const html = marked.parse("# Marked in Node.js\n\nRendered by **marked**.");
-  console.log(html);
+
+  const highlightWords = (text) => {
+    return text.replace(/\b(\w+)\b/g, (word) => {
+      if (database.includes(word)) {
+        return `<span style="background-color: yellow;">${word}</span>`;
+      } else {
+        return word;
+      }
+    });
+  };
+
+  const html = marked.parse(markdown);
+  const highlightedHtml = highlightWords(html);
 
   return (
     <div className="grid grid-cols-2 gap-4">
@@ -55,11 +70,12 @@ Ready to start writing?  Either start changing stuff on the left or
         />
       </div>
 
-      <div className="border-2 border-black h-[42rem] p-2 overflow-y-scroll">
-        <Markdown>{markdown}</Markdown>
-      </div>
+      <div
+        className="border-2 border-black h-[42rem] p-2 overflow-y-scroll"
+        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+      />
     </div>
   );
 };
 
-export default page;
+export default Page;
