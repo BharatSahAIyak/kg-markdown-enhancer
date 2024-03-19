@@ -1,5 +1,5 @@
 'use client'
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Markdown from "react-markdown";
 import { marked } from "marked";
 
@@ -39,18 +39,16 @@ It's easy.  It's not overly bloated, unlike HTML.  Also, as the creator of [mark
 Ready to start writing?  Either start changing stuff on the left or
 [clear everything](/demo/?text=) with a simple click.
 
-[Marked]: https://github.com/markedjs/marked/
-[Markdown]: http://daringfireball.net/projects/markdown/
 `;
-  
+
   const database = ["Markdown", "Marked", "HTML"];
-  
+
   const [markdown, setMarkdown] = useState(defaultMarkdown);
 
   const highlightWords = (text) => {
     return text.replace(/\b(\w+)\b/g, (word) => {
       if (database.includes(word)) {
-        return `<span style="background-color: yellow;">${word}</span>`;
+        return `<button onclick="window.neo4jIntegration('${word}')" style="background-color: yellow; cursor:pointer">${word}</button>`;
       } else {
         return word;
       }
@@ -59,6 +57,12 @@ Ready to start writing?  Either start changing stuff on the left or
 
   const html = marked.parse(markdown);
   const highlightedHtml = highlightWords(html);
+
+  useEffect(() => {
+    window.neo4jIntegration = (word) => {
+      console.log(`Clicked word: ${word}`);
+    };
+  }, []);
 
   return (
     <div className="grid grid-cols-2 gap-4">
