@@ -6,10 +6,10 @@ const password = 'testingInstance';
 
 const driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
 
-export default async function readNodes() {
+export default async function readOneNode() {
   const session = driver.session();
   try {
-    const result = await session.run('MATCH (n) RETURN n ');
+    const result = await session.run('MATCH (n)-[r]-(m) WHERE( n.name = "Person 1") RETURN n, r, m');
     return result.records.map(record => record.get('n').properties);
   } finally {
     await session.close();
