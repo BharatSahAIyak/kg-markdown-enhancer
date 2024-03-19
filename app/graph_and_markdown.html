@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Graph Visualization with Markdown</title>
+  <!-- Include D3.js library -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <!-- Include Marked.js library -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    .node {
+      fill: steelblue;
+      stroke: white;
+      stroke-width: 2px;
+    }
+    .highlighted-node {
+      fill: orange; /* Color for highlighted nodes */
+    }
+    #markdown-content {
+      margin-top: 20px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      background-color: #f8f8f8;
+    }
+  </style>
+</head>
+<body>
+  <!-- SVG container for the graph -->
+  <svg width="400" height="200"></svg>
+
+  <!-- Container for Markdown content -->
+  <div id="markdown-content"></div>
+
+  <script src="marked.js"></script>
+
+  <script>
+    // Example Markdown content
+    const markdownContent = `
+      # Graph Visualization with Markdown
+
+      This is an example Markdown content rendered dynamically.
+
+      ## Named Entities
+
+      - Chicago
+      - New York
+      - Los Angeles
+
+      Click on any of the named entities to zoom into the corresponding node on the graph.
+    `;
+
+    // Function to render Markdown content using Marked.js
+    function renderMarkdown(content) {
+      const markdownDiv = document.getElementById('markdown-content');
+      markdownDiv.innerHTML = marked(content);
+    }
+
+    // Call the renderMarkdown function with the example content
+    renderMarkdown(markdownContent);
+  </script>
+</body>
+</html>
