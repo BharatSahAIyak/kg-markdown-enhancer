@@ -1,9 +1,9 @@
-"use client"
+"use client";
 import { useEffect, useState } from 'react';
-import NeoVis from 'neovis.js'; 
 import neo4j from 'neo4j-driver';
 import readNodes from '@/Utils/ReadNodes';
 import readOneNode from '@/Utils/ReadOneNode'; // Import the function to read a single node
+import dynamic from 'next/dynamic';
 
 export default function Neo4jPage() {
   const [nodes, setNodes] = useState([]);
@@ -35,7 +35,15 @@ export default function Neo4jPage() {
         session.close();
       }
     }
-  }, []);
+  },[]);
+
+  useEffect(() => {
+    if (!loading && nodes.length > 0) {
+      if (viz) {
+        viz.render(); // Call render method when viz is available
+      }
+    }
+  }, [loading, nodes, viz]);
 
   useEffect(() => {
     if (!loading && nodes.length > 0) {
@@ -46,8 +54,7 @@ export default function Neo4jPage() {
   async function subscribeToChanges() {
     try {
       const session = driver.session();
-      await session.run('CALL dbms.queryJmx("org.neo4j:instance=kernel#0,name=Kernel")');
-      session.subscribe("MATCH (n) RETURN n", {
+      await session.run("MATCH (n) RETURN n", {
         onNext: async (record) => {
           const data = await readNodes();
           setNodes(data);
@@ -63,6 +70,7 @@ export default function Neo4jPage() {
 
   async function renderVisualization(data) {
     try {
+      const NeoVis = await import('neovis.js/dist/neovis.js'); // Dynamically import NeoVis
       const config = {
         containerId: "viz",
         neo4j: {
@@ -70,15 +78,10 @@ export default function Neo4jPage() {
           serverUser: "neo4j",
           serverPassword: "testingInstance",
         },
-        labels: {
-          Person: {
-            label: "name",
-            [NeoVis.NEOVIS_ADVANCED_CONFIG]: {
-              function: {
-                title: (node) => viz.nodeToHtml(node, ["name"])
-              }
-            }
-          }
+        nodes: {
+          label: true, 
+          size: 'age',
+          title: 'name',
         },
         relationships: {
           KNOWS: {
@@ -89,12 +92,12 @@ export default function Neo4jPage() {
         clickNodes: handleClickNode // Add clickNodes callback
       };
 
-      const viz = new NeoVis(config);
-      viz.render();
-      setViz(viz);
+      const viz = new NeoVis.default(config);
+      setViz(viz); // Set viz object in state
     } catch (error) {
       console.error('Error rendering visualization:', error);
     }
+  
   }
 
   async function handleClickNode(nodeId) {
@@ -118,7 +121,7 @@ export default function Neo4jPage() {
         WHERE( n.name = "Person 1")
         RETURN n, r, m
       `;
-
+      const NeoVis = await import('neovis.js/dist/neovis.js'); 
       const config = {
         containerId: "viz",
         neo4j: {
@@ -140,14 +143,14 @@ export default function Neo4jPage() {
         },
         initialCypher: cypher,
         initialCypherParameters: { selectedNodeName: selectedNodeName } // Pass node name parameter
-      };
-
-      const subViz = new NeoVis(config);
+      }
+      const subViz = new NeoVis.default(config);
       subViz.render();
     } catch (error) {
       console.error('Error rendering sub-graph:', error);
     }
   }
+  
 
   return (
     <div style={{ display: 'flex' }}>
