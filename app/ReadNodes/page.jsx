@@ -197,3 +197,4 @@ export default function Neo4jPage() {
     </div>
   );
 }
+//for setup accessing the page just go to http://localhost:3000/ReadNodes
