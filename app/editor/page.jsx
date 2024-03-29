@@ -3,12 +3,10 @@ import React, { useEffect, useState } from 'react';
 import { marked } from 'marked';
 import neo4j from 'neo4j-driver';
 import readNodes from '@/Utils/ReadNodes';
-import readOneNode from '@/Utils/ReadOneNode'; // Import the function to read a single node
 
 const Neo4jPage = () => {
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedNode, setSelectedNode] = useState(null);
   const [viz, setViz] = useState(null);
   const defaultMarkdown = `
 Marked - Markdown Parser
@@ -46,11 +44,30 @@ Ready to start writing?  Either start changing stuff on the left or
 [clear everything](/demo/?text=) with a simple click.
 
 `;
-
-  const database = ["Markdown", "Marked", "HTML","syntax","formatted","Demo"];
-
+  const uri = 'bolt://localhost:7687';
+  const user = 'neo4j';
+  const password = 'testingInstance';
+  const driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
+  
+  const [database, setDatabase] = useState([]);
   const [markdown] = useState(defaultMarkdown);
 
+  useEffect(()=>{
+    async function fetchNodeNames() {
+      const session = driver.session();
+
+      try {
+        const result = await session.run("MATCH (n) RETURN collect(n.name) AS nodeNames");
+        const nodeNames = result.records[0].get('nodeNames');
+        setDatabase(nodeNames);
+      } catch (error) {
+        console.error('Error fetching node names:', error);
+      } finally {
+        await session.close();
+      }
+    }
+    fetchNodeNames();
+  },[]) 
   const highlightWords = (text) => {
     return text.replace(/\b(\w+)\b/g, (word) => {
       if (database.includes(word)) {
@@ -65,11 +82,6 @@ Ready to start writing?  Either start changing stuff on the left or
   const html = marked.parse(markdown);
   const highlightedHtml = highlightWords(html);
 
-
-  const uri = 'bolt://localhost:7687';
-  const user = 'neo4j';
-  const password = 'testingInstance';
-  const driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
 
   useEffect(() => {
     async function fetchData() {
