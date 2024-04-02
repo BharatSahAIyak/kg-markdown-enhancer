@@ -1,9 +1,13 @@
-'use client'
-import React, { useState, useEffect } from "react";
-import Markdown from "react-markdown";
-import { marked } from "marked";
+"use client"
+import React, { useEffect, useState } from 'react';
+import { marked } from 'marked';
+import neo4j from 'neo4j-driver';
+import readNodes from '@/Utils/ReadNodes';
 
-const Page = () => {
+const Neo4jPage = () => {
+  const [nodes, setNodes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [viz, setViz] = useState(null);
   const defaultMarkdown = `
 Marked - Markdown Parser
 ========================
@@ -40,46 +44,195 @@ Ready to start writing?  Either start changing stuff on the left or
 [clear everything](/demo/?text=) with a simple click.
 
 `;
+  const uri = 'bolt://localhost:7687';
+  const user = 'neo4j';
+  const password = 'testingInstance';
+  const driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
+  
+  const [database, setDatabase] = useState([]);
+  const [markdown] = useState(defaultMarkdown);
 
-  const database = ["Markdown", "Marked", "HTML"];
+  useEffect(()=>{
+    async function fetchNodeNames() {
+      const session = driver.session();
 
-  const [markdown, setMarkdown] = useState(defaultMarkdown);
-
+      try {
+        const result = await session.run("MATCH (n) RETURN collect(n.name) AS nodeNames");
+        const nodeNames = result.records[0].get('nodeNames');
+        setDatabase(nodeNames);
+      } catch (error) {
+        console.error('Error fetching node names:', error);
+      } finally {
+        await session.close();
+      }
+    }
+    fetchNodeNames();
+  },[]) 
   const highlightWords = (text) => {
     return text.replace(/\b(\w+)\b/g, (word) => {
       if (database.includes(word)) {
-        return `<button onclick="window.neo4jIntegration('${word}')" style="background-color: yellow; cursor:pointer">${word}</button>`;
+        return `<button onclick="handleWordClick('${word}')" style="background-color: yellow; cursor:pointer">${word}</button>`;
       } else {
         return word;
       }
     });
   };
+  
 
   const html = marked.parse(markdown);
   const highlightedHtml = highlightWords(html);
 
+
   useEffect(() => {
-    window.neo4jIntegration = (word) => {
-      console.log(`Clicked word: ${word}`);
+    async function fetchData() {
+      try {
+        const data = await readNodes();
+        setNodes(data);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching nodes:', error);
+        setLoading(false);
+      }
+    }
+    fetchData();
+    const session = driver.session();
+    subscribeToChanges();
+    return () => {
+      if (session) {
+        session.close();
+      }
     };
   }, []);
 
+  useEffect(() => {
+    if (!loading && nodes.length > 0) {
+      if (viz) {
+        viz.render(); // Call render method when viz is available
+      }
+    }
+  }, [loading, nodes, viz]);
+
+  useEffect(() => {
+    if (!loading && nodes.length > 0) {
+      renderVisualization(nodes);
+    }
+  }, [loading, nodes]);
+
+  async function subscribeToChanges() {
+    try {
+      const session = driver.session();
+      await session.run('MATCH (n) RETURN n', {
+        onNext: async (record) => {
+          const data = await readNodes();
+          setNodes(data);
+        },
+        onError: (error) => {
+          console.error('Subscription error:', error);
+        },
+      });
+    } catch (error) {
+      console.error('Error subscribing to changes:', error);
+    }
+  }
+
+  async function renderVisualization(data) {
+    try {
+      const cypher = `MATCH (n:Word)
+      OPTIONAL MATCH (n)-[r:VERB]->(m:Word)
+      RETURN n, r, m`;
+      ;
+      const NeoVis = await import('neovis.js/dist/neovis.js'); // Dynamically import NeoVis
+      const config = {
+        containerId: 'viz',
+        neo4j: {
+          serverUrl: 'bolt://localhost:7687',
+          serverUser: 'neo4j',
+          serverPassword: 'testingInstance',
+        },
+        labels: {
+          "Word": {
+            label: 'name',
+            size: 'age',
+          },
+        },
+        relationships: {
+          "VERB": {
+            thickness: 2,
+          },
+        },
+        initialCypher: cypher,
+        clickNodes: handleWordClick, // Add clickNodes callback
+      };
+
+      const viz = new NeoVis.default(config);
+      setViz(viz); // Set viz object in state
+    } catch (error) {
+      console.error('Error rendering visualization:', error);
+    }
+  }
+  useEffect(()=>{
+    if(typeof window!==undefined){
+      window.handleWordClick = async (word) => {
+        if (viz) {
+          viz.clearNetwork(); 
+        }
+        try {
+          const cypher = `
+            MATCH (n {name: '${word}'})-[r]-(m)
+            RETURN n, r, m
+          `;
+          const NeoVis = await import('neovis.js/dist/neovis.js'); 
+          const config = {
+            containerId: "viz",
+            neo4j: {
+              serverUrl: "bolt://localhost:7687",
+              serverUser: "neo4j",
+              serverPassword: "testingInstance",
+            },
+            labels:{
+              "Word":{
+                label:"name",
+                size:"age",
+              }
+            },
+            relationships: {
+              "VERB": {
+                thickness: 2,
+              },
+            },
+            initialCypher: cypher,
+      
+          }
+          const subViz = new NeoVis.default(config);
+          subViz.render();
+        } catch (error) {
+          console.error('Error rendering sub-graph:', error);
+        }
+      };
+        
+    }
+    
+  },[])
+
+  // Function to fetch data related to the clicked word from Neo4j
+
   return (
-    <div className="grid grid-cols-2 gap-4">
-      <div className="border-2 border-black h-full p-2">
-        <textarea
-          value={markdown}
-          className=" w-full h-full p-2 text-xl"
-          onChange={(e) => setMarkdown(e.target.value)}
-        />
-      </div>
+    <div style={{ display: 'flex' }}>
+  <div style={{ width: '50%', height: '100vh', overflowY: 'auto' }}>
+    <h1>Neo4j Visualization</h1>
+    {loading ? (
+      <p>Loading...</p>
+    ) : (
+      <div id="viz" style={{ width: '100%', height: '80%' }}></div>
+    )}
+  </div>
+  <div style={{ width: '50%', height: '100vh', overflowY: 'auto' }}>
+    <h1>Markdown Content</h1>
+    <div dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+  </div>
+</div>
 
-      <div
-        className="border-2 border-black h-[42rem] p-2 overflow-y-scroll"
-        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-      />
-    </div>
   );
-};
+}; 
+export default Neo4jPage;
 
-export default Page;
