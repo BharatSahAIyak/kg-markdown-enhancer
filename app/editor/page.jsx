@@ -59,7 +59,7 @@ Ready to start writing?  Either start changing stuff on the left or
       const session = driver.session();
 
       try {
-        const result = await session.run("MATCH (n) RETURN collect(n.name) AS nodeNames");
+        const result = await session.run("MATCH (n:Entity) RETURN collect(n.Name) AS nodeNames");
         const nodeNames = result.records[0].get('nodeNames');
         setDatabase(nodeNames);
       } catch (error) {
@@ -81,8 +81,7 @@ Ready to start writing?  Either start changing stuff on the left or
     try {
       const session = driver.session();
       const result = await session.run(
-        `MATCH (n:Word {name: $searchTerm})
-         RETURN n`,
+        `MATCH (n:Entity {Name: $searchTerm}) RETURN n`,
         { searchTerm }
       );
       const searchResults = result.records.map((record) => record.get('n'));
@@ -91,7 +90,7 @@ Ready to start writing?  Either start changing stuff on the left or
   
       // Trigger the handleWordClick function with the searched word
       if (searchResults.length > 0) {
-        const searchedWord = searchResults[0].properties.name;
+        const searchedWord = searchResults[0].properties.Name;
         window.handleWordClick(searchedWord);
       }
     } catch (error) {
@@ -168,15 +167,15 @@ Ready to start writing?  Either start changing stuff on the left or
 
   async function renderVisualization(data) {
     try {
-      let cypher = `MATCH (n:Word)
-                  OPTIONAL MATCH (n)-[r:VERB]->(m:Word)
+      let cypher = `MATCH (n:Entity)
+                  OPTIONAL MATCH (n)-[r:RELATES_TO]->(m:Entity)
                   RETURN n, r, m`;
     if (searchResults.length > 0) {
-      const searchResultIds = searchResults.map((result) => result.identity).join(', ');
-      cypher = `MATCH (n)
-                WHERE id(n) IN [${searchResultIds}]
-                OPTIONAL MATCH (n)-[r]-(m)
-                RETURN n, r, m`;
+      const searchResultNames = searchResults.map((record) => `'${record.get('n').properties.Name}'`).join(', ')
+      cypher = `MATCH (n:Entity)
+      WHERE n.Name IN [${searchResultNames}]
+      OPTIONAL MATCH (n)-[r:RELATES_TO]->(m:Entity)
+      RETURN n, r, m`;
     }
       const NeoVis = await import('neovis.js/dist/neovis.js'); // Dynamically import NeoVis
       const config = {
@@ -187,15 +186,15 @@ Ready to start writing?  Either start changing stuff on the left or
           serverPassword: 'testingInstance',
         },
         labels: {
-          "Word": {
-            label: 'name',
-            size: 'age',
-          },
+          "Entity": {
+            label: 'Name',
+            size: 'Version'
+          }
         },
         relationships: {
-          "VERB": {
-            thickness: 2,
-          },
+          "RELATES_TO": {
+            thickness: 2
+          }
         },
         initialCypher: cypher,
         clickNodes: handleWordClick, // Add clickNodes callback
@@ -215,8 +214,8 @@ Ready to start writing?  Either start changing stuff on the left or
         }
         try {
           const cypher = `
-          MATCH (n {name: '${word}'})
-          OPTIONAL MATCH (n)-[r]-(m)
+          MATCH (n:Entity {Name: '${word}'})
+          OPTIONAL MATCH (n)-[r:RELATES_TO]->(m:Entity)
           RETURN n, r, m
           `;
           const NeoVis = await import('neovis.js/dist/neovis.js'); 
@@ -227,16 +226,16 @@ Ready to start writing?  Either start changing stuff on the left or
               serverUser: "neo4j",
               serverPassword: "testingInstance",
             },
-            labels:{
-              "Word":{
-                label:"name",
-                size:"age",
+            labels: {
+              "Entity": {
+                label: 'Name',
+                size: 'Version'
               }
             },
             relationships: {
-              "VERB": {
-                thickness: 2,
-              },
+              "RELATES_TO": {
+                thickness: 2
+              }
             },
             initialCypher: cypher,
       
