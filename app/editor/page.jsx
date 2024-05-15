@@ -81,7 +81,9 @@ Ready to start writing?  Either start changing stuff on the left or
     try {
       const session = driver.session();
       const result = await session.run(
-        `MATCH (n:Entity {Name: $searchTerm}) RETURN n`,
+        `MATCH (n:Entity)
+        WHERE n.Name =~ '(?i).*${searchTerm}.*'
+        RETURN n`,
         { searchTerm }
       );
       const searchResults = result.records.map((record) => record.get('n'));
