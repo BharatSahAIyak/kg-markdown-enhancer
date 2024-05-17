@@ -3,7 +3,7 @@ import "./globals.css";
 import Script from "next/script";
 
 const inter = Inter({ subsets: ["latin"] });
-import Navbar from "@/components/Navbar";
+
 
 export const metadata = {
   title: "Create Next App",
@@ -16,7 +16,7 @@ export default function RootLayout({ children }) {
       <Script src="https://cdn.freecodecamp.org/testable-projects-fcc/v1/bundle.js" />
       <body className={inter.className}>
         <div>
-          <Navbar />
+          
         </div>
         {children}
       </body>

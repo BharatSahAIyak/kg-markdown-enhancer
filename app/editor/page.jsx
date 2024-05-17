@@ -1,8 +1,10 @@
+
 "use client"
 import React, { useEffect, useState } from 'react';
 import { marked } from 'marked';
 import neo4j from 'neo4j-driver';
 import readNodes from '@/Utils/ReadNodes';
+
 
 const Neo4jPage = () => {
   const [nodes, setNodes] = useState([]);
@@ -33,7 +35,7 @@ That's it.  Pretty simple.  There's also a drop-down option above to switch betw
 It's easy.  It's not overly bloated, unlike HTML.  Also, as the creator of [markdown] says,
 
 - > The overriding design goal for Markdown's
-- > formatting syntax is to make it as readable
+- > formatting Syntax is to make it as readable
 - > as possible. The idea is that a
 - > Markdown-formatted document should be
 - > publishable as-is, as plain text, without
@@ -57,7 +59,7 @@ Ready to start writing?  Either start changing stuff on the left or
       const session = driver.session();
 
       try {
-        const result = await session.run("MATCH (n) RETURN collect(n.name) AS nodeNames");
+        const result = await session.run("MATCH (n:Entity) RETURN collect(n.Name) AS nodeNames");
         const nodeNames = result.records[0].get('nodeNames');
         setDatabase(nodeNames);
       } catch (error) {
@@ -68,9 +70,41 @@ Ready to start writing?  Either start changing stuff on the left or
     }
     fetchNodeNames();
   },[]) 
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  
+  const handleSearchChange = (event) => {
+    setSearchTerm(event.target.value);
+  };
+  
+  const handleSearch = async () => {
+    try {
+        const session = driver.session();
+        const result = await session.run(
+            `MATCH (n:Entity)
+            WITH n, apoc.text.levenshteinDistance(n.Name, $searchTerm) AS distance
+            WHERE distance < 3 // Adjust the threshold for "fuzziness"
+            RETURN n
+            ORDER BY distance ASC`,
+            { searchTerm }
+        );
+        const searchResults = result.records.map((record) => record.get('n'));
+        setSearchResults(searchResults);
+        await session.close();
+
+        // Trigger the handleWordClick function with the searched word
+        if (searchResults.length > 0) {
+            const searchedWord = searchResults[0].properties.Name;
+            window.handleWordClick(searchedWord);
+        }
+    } catch (error) {
+        console.error('Error performing search:', error);
+    }
+};
+
   const highlightWords = (text) => {
     return text.replace(/\b(\w+)\b/g, (word) => {
-      if (database.includes(word)) {
+      if (database.includes(word) || searchResults.some((result) => result.properties.name === word)) {
         return `<button onclick="handleWordClick('${word}')" style="background-color: yellow; cursor:pointer">${word}</button>`;
       } else {
         return word;
@@ -135,12 +169,19 @@ Ready to start writing?  Either start changing stuff on the left or
     }
   }
 
+
   async function renderVisualization(data) {
     try {
-      const cypher = `MATCH (n:Word)
-      OPTIONAL MATCH (n)-[r:VERB]->(m:Word)
+      let cypher = `MATCH (n:Entity)
+                  OPTIONAL MATCH (n)-[r:RELATES_TO]->(m:Entity)
+                  RETURN n, r, m`;
+    if (searchResults.length > 0) {
+      const searchResultNames = searchResults.map((record) => `'${record.get('n').properties.Name}'`).join(', ')
+      cypher = `MATCH (n:Entity)
+      WHERE n.Name IN [${searchResultNames}]
+      OPTIONAL MATCH (n)-[r:RELATES_TO]->(m:Entity)
       RETURN n, r, m`;
-      ;
+    }
       const NeoVis = await import('neovis.js/dist/neovis.js'); // Dynamically import NeoVis
       const config = {
         containerId: 'viz',
@@ -150,15 +191,15 @@ Ready to start writing?  Either start changing stuff on the left or
           serverPassword: 'testingInstance',
         },
         labels: {
-          "Word": {
-            label: 'name',
-            size: 'age',
-          },
+          "Entity": {
+            label: 'Name',
+            size: 'Version'
+          }
         },
         relationships: {
-          "VERB": {
-            thickness: 2,
-          },
+          "RELATES_TO": {
+            thickness: 2
+          }
         },
         initialCypher: cypher,
         clickNodes: handleWordClick, // Add clickNodes callback
@@ -178,8 +219,9 @@ Ready to start writing?  Either start changing stuff on the left or
         }
         try {
           const cypher = `
-            MATCH (n {name: '${word}'})-[r]-(m)
-            RETURN n, r, m
+          MATCH (n:Entity {Name: '${word}'})
+          OPTIONAL MATCH (n)-[r:RELATES_TO]->(m:Entity)
+          RETURN n, r, m
           `;
           const NeoVis = await import('neovis.js/dist/neovis.js'); 
           const config = {
@@ -189,16 +231,16 @@ Ready to start writing?  Either start changing stuff on the left or
               serverUser: "neo4j",
               serverPassword: "testingInstance",
             },
-            labels:{
-              "Word":{
-                label:"name",
-                size:"age",
+            labels: {
+              "Entity": {
+                label: 'Name',
+                size: 'Version'
               }
             },
             relationships: {
-              "VERB": {
-                thickness: 2,
-              },
+              "RELATES_TO": {
+                thickness: 2
+              }
             },
             initialCypher: cypher,
       
@@ -217,22 +259,54 @@ Ready to start writing?  Either start changing stuff on the left or
   // Function to fetch data related to the clicked word from Neo4j
 
   return (
-    <div style={{ display: 'flex' }}>
-  <div style={{ width: '50%', height: '100vh', overflowY: 'auto' }}>
-    <h1>Neo4j Visualization</h1>
-    {loading ? (
-      <p>Loading...</p>
-    ) : (
-      <div id="viz" style={{ width: '100%', height: '80%' }}></div>
-    )}
-  </div>
-  <div style={{ width: '50%', height: '100vh', overflowY: 'auto' }}>
-    <h1>Markdown Content</h1>
-    <div dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+    <div>
+  <nav className="flex items-center justify-between bg-blue-500 p-4">
+    <div className="flex items-center">
+      <h1 className="text-white text-2xl font-bold mr-4">Neo4j Visualization</h1>
+      <div className="relative">
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={handleSearchChange}
+          placeholder="Search node"
+          className="pl-10 pr-4 py-2 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-white"
+        />
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <svg
+            className="h-5 w-5 text-gray-400"
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+        <button
+          onClick={handleSearch}
+          className="absolute right-0 top-0 mt-0 mb-1 mr-2 px-4 py-2 bg-white text-blue-500 rounded-md hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-white"
+        >
+          Search
+        </button>
+      </div>
+    </div>
+  </nav>
+  <div style={{ display: 'flex' }}>
+    <div style={{ width: '50%', height: 'calc(100vh - 64px)', overflowY: 'auto' }}>
+      {loading ? (
+        <p>Loading...</p>
+      ) : (
+        <div id="viz" style={{ width: '100%', height: '100%' }}></div>
+      )}
+    </div>
+    <div style={{ width: '50%', height: 'calc(100vh - 64px)', overflowY: 'auto' }}>
+      <h1 className="text-2xl font-bold mb-4">Markdown Content</h1>
+      <div dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+    </div>
   </div>
 </div>
-
   );
 }; 
 export default Neo4jPage;
-
