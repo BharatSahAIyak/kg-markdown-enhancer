@@ -79,26 +79,29 @@ Ready to start writing?  Either start changing stuff on the left or
   
   const handleSearch = async () => {
     try {
-      const session = driver.session();
-      const result = await session.run(
-        `MATCH (n:Entity)
-        WHERE n.Name =~ '(?i).*${searchTerm}.*'
-        RETURN n`,
-        { searchTerm }
-      );
-      const searchResults = result.records.map((record) => record.get('n'));
-      setSearchResults(searchResults);
-      await session.close();
-  
-      // Trigger the handleWordClick function with the searched word
-      if (searchResults.length > 0) {
-        const searchedWord = searchResults[0].properties.Name;
-        window.handleWordClick(searchedWord);
-      }
+        const session = driver.session();
+        const result = await session.run(
+            `MATCH (n:Entity)
+            WITH n, apoc.text.levenshteinDistance(n.Name, $searchTerm) AS distance
+            WHERE distance < 3 // Adjust the threshold for "fuzziness"
+            RETURN n
+            ORDER BY distance ASC`,
+            { searchTerm }
+        );
+        const searchResults = result.records.map((record) => record.get('n'));
+        setSearchResults(searchResults);
+        await session.close();
+
+        // Trigger the handleWordClick function with the searched word
+        if (searchResults.length > 0) {
+            const searchedWord = searchResults[0].properties.Name;
+            window.handleWordClick(searchedWord);
+        }
     } catch (error) {
-      console.error('Error performing search:', error);
+        console.error('Error performing search:', error);
     }
-  };
+};
+
   const highlightWords = (text) => {
     return text.replace(/\b(\w+)\b/g, (word) => {
       if (database.includes(word) || searchResults.some((result) => result.properties.name === word)) {
