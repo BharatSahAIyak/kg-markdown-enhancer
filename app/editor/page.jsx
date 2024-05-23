@@ -1,13 +1,15 @@
-"use client"
-import React, { useEffect, useState } from 'react';
-import { marked } from 'marked';
-import neo4j from 'neo4j-driver';
-import readNodes from '@/Utils/ReadNodes';
+"use client";
+import React, { useEffect, useState } from "react";
+import { marked } from "marked";
+import neo4j from "neo4j-driver";
+import readNodes from "@/Utils/ReadNodes";
+import axios from "axios";
 
 const Neo4jPage = () => {
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viz, setViz] = useState(null);
+  const [searchText, setSearchText] = useState("");
   const defaultMarkdown = `
 Marked - Markdown Parser
 ========================
@@ -44,30 +46,143 @@ Ready to start writing?  Either start changing stuff on the left or
 [clear everything](/demo/?text=) with a simple click.
 
 `;
-  const uri = 'bolt://localhost:7687';
-  const user = 'neo4j';
-  const password = 'testingInstance';
+  const uri = "bolt://localhost:7687";
+  const user = "neo4j";
+  const password = "testingInstance";
   const driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
-  
+
   const [database, setDatabase] = useState([]);
   const [markdown] = useState(defaultMarkdown);
 
-  useEffect(()=>{
-    async function fetchNodeNames() {
-      const session = driver.session();
+  const createEmbeddings = async () => {
+    const session = driver.session();
+    try {
+      //Retreive each node from the database
+      // await session.run("CALL db.index.vector.createNodeIndex('movie-embeddings','Movie','vec_embeddings',1536,'cosine')");
+      const nodes_res = await session.run("MATCH (n:Movie) RETURN n LIMIT 5");
+      setLoading(false);
 
+      const nodes = nodes_res.records.map((record) => {
+        const node = record.get("n");
+       
+        return {
+          id: node.identity.toInt(),
+          description: node.properties.tagline,
+          title: node.properties.title,
+        };
+      });
+  
+      const apiKey = process.env.OPENAI_API_KEY;
+
+      for (const node of nodes) {
+        try {
+          // Call OpenAI API to get embeddings for each node description
+          setLoading(true);
+          const response = await axios.post(
+            "https://api.openai.com/v1/embeddings",
+            {
+              input: `${node.description}`,
+              model: "text-embedding-3-small",
+            },
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + apiKey,
+              },
+            }
+          );
+          const embedding = response?.data?.data[0]?.embedding;
+         
+
+          // Store the embeddings in the database
+          const updated_node = await session.run(
+            "MATCH (n:Movie) WHERE id(n) = $nodeId SET n.vec_embeddings = $embedding RETURN n",
+            {
+              nodeId: neo4j.int(node.id),
+              embedding:embedding,
+            }
+          );
+          setLoading(false);
+        } catch (error) {
+          console.error("Error updating nodes:", error);
+          setLoading(false);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching nodes:", error);
+      setLoading(false);
+    } finally {
+      await session.close();
+    }
+
+
+  };
+
+  const handleSearch = async () => {
+    const apiKey = process.env.OPENAI_API_KEY;
+    const session = driver.session();
+    setLoading(true);
+    try{
+
+    const response = await axios.post(
+      "https://api.openai.com/v1/embeddings",
+      {
+        input: `${searchText}`,
+        model: "text-embedding-3-small",
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + apiKey,
+        },
+      }
+    );
+    const embedding = response?.data?.data[0]?.embedding;
+    // console.log(embedding);
+    const result=await session.run("CALL db.index.vector.queryNodes('movie-embeddings',5,$embedding) YIELD node as similarNode,score RETURN similarNode ",{embedding:embedding});
+    // console.log(result.records);
+    const search_nodes = result.records.map((record) => {
+      const node = record.get("similarNode");
+      return {
+        id: node.identity.toInt(),
+        description: node.properties.tagline,
+        title: node.properties.title,
+      };
+    });
+    setNodes(search_nodes);
+    setLoading(false);
+
+  } catch (error) {
+    console.error("Error updating nodes:", error);
+    setLoading(false);
+  }finally
+  {
+    await session.close();  
+  }
+
+
+
+  }
+
+
+  useEffect(() => {
+    async function fetchNodeNames() {
       try {
-        const result = await session.run("MATCH (n) RETURN collect(n.name) AS nodeNames");
-        const nodeNames = result.records[0].get('nodeNames');
+        const result = await session.run(
+          "MATCH (n) RETURN collect(n.name) AS nodeNames"
+        );
+        const nodeNames = result.records[0].get("nodeNames");
         setDatabase(nodeNames);
       } catch (error) {
-        console.error('Error fetching node names:', error);
+        console.error("Error fetching node names:", error);
       } finally {
         await session.close();
       }
     }
     fetchNodeNames();
-  },[]) 
+    createEmbeddings();
+  }, []);
+
   const highlightWords = (text) => {
     return text.replace(/\b(\w+)\b/g, (word) => {
       if (database.includes(word)) {
@@ -77,11 +192,9 @@ Ready to start writing?  Either start changing stuff on the left or
       }
     });
   };
-  
 
   const html = marked.parse(markdown);
   const highlightedHtml = highlightWords(html);
-
 
   useEffect(() => {
     async function fetchData() {
@@ -90,7 +203,7 @@ Ready to start writing?  Either start changing stuff on the left or
         setNodes(data);
         setLoading(false);
       } catch (error) {
-        console.error('Error fetching nodes:', error);
+        console.error("Error fetching nodes:", error);
         setLoading(false);
       }
     }
@@ -114,24 +227,69 @@ Ready to start writing?  Either start changing stuff on the left or
 
   useEffect(() => {
     if (!loading && nodes.length > 0) {
-      renderVisualization(nodes);
+      renderVis(nodes);
+      // renderVisualization(nodes);
     }
   }, [loading, nodes]);
+
+    useEffect(() => {
+    console.log(nodes);
+  }, [ nodes]);
 
   async function subscribeToChanges() {
     try {
       const session = driver.session();
-      await session.run('MATCH (n) RETURN n', {
+      await session.run("MATCH (n) RETURN n", {
         onNext: async (record) => {
           const data = await readNodes();
           setNodes(data);
         },
         onError: (error) => {
-          console.error('Subscription error:', error);
+          console.error("Subscription error:", error);
         },
       });
     } catch (error) {
-      console.error('Error subscribing to changes:', error);
+      console.error("Error subscribing to changes:", error);
+    }
+  }
+
+
+  // Function to view only the required nodes
+  async function renderVis(data) {
+    try {
+      const nodeIds = data.map(node => node.id).join(',');
+      console.log(nodeIds);
+      const cypherQuery = `MATCH (n) WHERE id(n) IN [${nodeIds}] RETURN n`;
+      const NeoVis = await import("neovis.js/dist/neovis.js"); // Dynamically import NeoVis
+      const config = {
+        containerId: "viz",
+        neo4j: {
+          serverUrl: "bolt://localhost:7687",
+          serverUser: "neo4j",
+          serverPassword: "testingInstance",
+        },
+        labels: {
+          Movie: {
+            label: "title",
+            // size: "age",
+          },
+          Person:{
+            label: "name",
+          }
+        },
+        relationships: {
+          ACTED_IN: {
+            thickness: 2,
+          },
+        },
+        initialCypher: cypherQuery,
+        clickNodes: handleWordClick, // Add clickNodes callback
+      };
+
+      const viz = new NeoVis.default(config);
+      setViz(viz); // Set viz object in state
+    } catch (error) {
+      console.error("Error rendering visualization:", error);
     }
   }
 
@@ -140,23 +298,22 @@ Ready to start writing?  Either start changing stuff on the left or
       const cypher = `MATCH (n:Word)
       OPTIONAL MATCH (n)-[r:VERB]->(m:Word)
       RETURN n, r, m`;
-      ;
-      const NeoVis = await import('neovis.js/dist/neovis.js'); // Dynamically import NeoVis
+      const NeoVis = await import("neovis.js/dist/neovis.js"); // Dynamically import NeoVis
       const config = {
-        containerId: 'viz',
+        containerId: "viz",
         neo4j: {
-          serverUrl: 'bolt://localhost:7687',
-          serverUser: 'neo4j',
-          serverPassword: 'testingInstance',
+          serverUrl: "bolt://localhost:7687",
+          serverUser: "neo4j",
+          serverPassword: "testingInstance",
         },
         labels: {
-          "Word": {
-            label: 'name',
-            size: 'age',
+          Word: {
+            label: "name",
+            size: "age",
           },
         },
         relationships: {
-          "VERB": {
+          VERB: {
             thickness: 2,
           },
         },
@@ -167,21 +324,23 @@ Ready to start writing?  Either start changing stuff on the left or
       const viz = new NeoVis.default(config);
       setViz(viz); // Set viz object in state
     } catch (error) {
-      console.error('Error rendering visualization:', error);
+      console.error("Error rendering visualization:", error);
     }
   }
-  useEffect(()=>{
-    if(typeof window!==undefined){
+
+
+  useEffect(() => {
+    if (typeof window !== undefined) {
       window.handleWordClick = async (word) => {
         if (viz) {
-          viz.clearNetwork(); 
+          viz.clearNetwork();
         }
         try {
           const cypher = `
             MATCH (n {name: '${word}'})-[r]-(m)
             RETURN n, r, m
           `;
-          const NeoVis = await import('neovis.js/dist/neovis.js'); 
+          const NeoVis = await import("neovis.js/dist/neovis.js");
           const config = {
             containerId: "viz",
             neo4j: {
@@ -189,50 +348,47 @@ Ready to start writing?  Either start changing stuff on the left or
               serverUser: "neo4j",
               serverPassword: "testingInstance",
             },
-            labels:{
-              "Word":{
-                label:"name",
-                size:"age",
-              }
+            labels: {
+              Word: {
+                label: "name",
+                size: "age",
+              },
             },
             relationships: {
-              "VERB": {
+              VERB: {
                 thickness: 2,
               },
             },
             initialCypher: cypher,
-      
-          }
+          };
           const subViz = new NeoVis.default(config);
           subViz.render();
         } catch (error) {
-          console.error('Error rendering sub-graph:', error);
+          console.error("Error rendering sub-graph:", error);
         }
       };
-        
     }
-    
-  },[])
+  }, []);
 
   // Function to fetch data related to the clicked word from Neo4j
 
   return (
-    <div style={{ display: 'flex' }}>
-  <div style={{ width: '50%', height: '100vh', overflowY: 'auto' }}>
-    <h1>Neo4j Visualization</h1>
-    {loading ? (
-      <p>Loading...</p>
-    ) : (
-      <div id="viz" style={{ width: '100%', height: '80%' }}></div>
-    )}
-  </div>
-  <div style={{ width: '50%', height: '100vh', overflowY: 'auto' }}>
-    <h1>Markdown Content</h1>
-    <div dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
-  </div>
-</div>
-
+    <div style={{ display: "flex" }}>
+      <div style={{ width: "50%", height: "100vh", overflowY: "auto" }}>
+        <h1>Neo4j Visualization</h1>
+        {loading ? (
+          <p>Loading...</p>
+        ) : (
+          <div id="viz" style={{ width: "100%", height: "80%" }}></div>
+        )}
+      </div>
+      <div style={{ width: "50%", height: "100vh", overflowY: "auto" }}>
+        <h1>Markdown Content</h1>
+        <input type="text" value={searchText} onChange={(e)=>setSearchText(e.target.value)}></input>
+        <button onClick={handleSearch}>Search</button>
+        <div dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+      </div>
+    </div>
   );
-}; 
+};
 export default Neo4jPage;
-
