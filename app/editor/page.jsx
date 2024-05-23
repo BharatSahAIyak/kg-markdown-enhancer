@@ -119,7 +119,7 @@ Ready to start writing?  Either start changing stuff on the left or
   };
 
   const handleSearch = async () => {
-    const apiKey = "sk-proj-AWmjnsPL6Bfs8xnCzpliT3BlbkFJIqV3REcKdOrlBNIWNhRq";
+    const apiKey = process.env.OPENAI_API_KEY;
     const session = driver.session();
     setLoading(true);
     try{
