@@ -71,8 +71,8 @@ Ready to start writing?  Either start changing stuff on the left or
           title: node.properties.title,
         };
       });
-    
-      const apiKey = "";
+  
+      const apiKey = process.env.OPENAI_API_KEY;
 
       for (const node of nodes) {
         try {
